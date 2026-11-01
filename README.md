@@ -37,6 +37,7 @@ Aurémi handles that workflow automatically while keeping the original download 
 - **No root access for daily use:** applications are installed inside the current user's home directory.
 - **Distribution-independent:** static AMD64 and ARM64 binaries, with no GTK or Qt runtime dependency.
 - **Reversible:** list and remove managed applications without touching the original download.
+- **Application manager:** update or uninstall integrated AppImages from Aurémi's graphical interface.
 
 ## Quick start
 
@@ -162,7 +163,19 @@ Remove a managed application:
 appimage-integrator remove appimage-my-application
 ```
 
-Removal deletes only the managed copy, icon, and launchers. The original AppImage remains untouched.
+Update a managed application from a newly downloaded AppImage:
+
+```bash
+appimage-integrator update appimage-my-application NewVersion.AppImage
+```
+
+Open the graphical application manager:
+
+```bash
+appimage-integrator manage
+```
+
+Updates preserve the managed application identity, launcher, and desktop shortcut. Removal deletes only the managed copy, icon, and launchers. Original AppImages and application data remain untouched.
 
 ## Linux compatibility
 
@@ -237,8 +250,8 @@ sha256sum -c SHA256SUMS
 Then install [Cosign](https://docs.sigstore.dev/cosign/system_config/installation/) and verify the file's signature. Replace the artifact and tag if needed:
 
 ```bash
-artifact=Auremi-0.3.4-linux-amd64.deb
-tag=v0.3.4
+artifact=Auremi-0.4.0-linux-amd64.deb
+tag=v0.4.0
 cosign verify-blob "$artifact" \
   --bundle "$artifact.sigstore.json" \
   --certificate-identity "https://github.com/AnARCHIS12/appimage-integrator/.github/workflows/release.yml@refs/tags/$tag" \

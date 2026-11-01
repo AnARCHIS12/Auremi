@@ -6,6 +6,19 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-01
+
+### Added
+
+- Added a graphical application manager for integrated AppImages.
+- Added updates from a newly downloaded AppImage while preserving the managed identity, launcher, icons, and desktop shortcut.
+- Added graphical uninstallation with confirmation and explicit preservation of original downloads and application data.
+- Added the `manage` and `update ID file.AppImage` commands.
+
+### Changed
+
+- Turned the Aurémi application-menu entry into a direct entry point for application management.
+
 ## [0.3.4] — 2026-10-07
 
 ### Added
@@ -89,7 +102,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Automated tagged releases through GitHub Actions.
 - SHA-256 checksums for release assets.
 
-[Unreleased]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.1...v0.3.2

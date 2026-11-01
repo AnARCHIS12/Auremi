@@ -1,15 +1,16 @@
-# Aurémi 0.3.4
+# Aurémi 0.4.0
 
-This release introduces official signed package repositories so Linux software centers can identify Aurémi and trust its publication source.
+This release adds a graphical manager for updating and uninstalling integrated AppImages.
 
 ## Highlights
 
-- Publishes official APT and DNF repositories for AMD64 and ARM64 through GitHub Pages.
-- Signs APT release metadata, DNF repository metadata, and RPM packages with a dedicated GPG publication key.
-- Provides AppStream catalogs and cached icons to software centers.
-- Identifies the application as Aurémi, with its official logo, precise version, description, and release history.
-- Displays the installed Aurémi version in the welcome dialog and keeps its onboarding text in English.
-- Keeps the precise AppImage version detection, corrected icons, and Wayland launcher matching from earlier releases.
+- Opens the application manager directly from the Aurémi menu entry.
+- Lists integrated applications with their detected versions.
+- Updates an application from a newly downloaded AppImage without creating a duplicate entry.
+- Preserves the managed identity, launcher, icons, and desktop shortcut during updates.
+- Uninstalls managed applications after confirmation.
+- Preserves original downloads and application data during both updates and removal.
+- Adds matching `manage`, `update`, and existing `remove` command-line operations.
 - Signs every executable, installer archive, DEB, RPM, and checksum file with keyless Sigstore signing.
 - Publishes a `.sigstore.json` verification bundle beside every signed download.
 
@@ -21,7 +22,7 @@ This release introduces official signed package repositories so Linux software c
 
 Most computers use AMD64. ARM64 packages are also provided.
 
-After installation, open **Aurémi** from the application menu for a short getting-started guide, or simply double-click an AppImage.
+After installation, open **Aurémi** from the application menu to manage integrated applications, or simply double-click an AppImage to install it.
 
 Use `SHA256SUMS` to verify downloaded assets.
 

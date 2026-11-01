@@ -30,9 +30,9 @@ Priority: optional
 Architecture: $deb_arch
 Maintainer: AnARCHIS12 <noreply@github.com>
 Homepage: https://github.com/AnARCHIS12/appimage-integrator
-Description: Simple AppImage integration for Linux desktops
- Aurémi installs AppImages into the application menu and desktop with a
- double-click, while preserving the original downloaded file.
+Description: Install, update, and uninstall AppImages
+ Aurémi integrates AppImages into the Linux desktop and provides a graphical
+ manager for safe updates and removal while preserving original downloads.
 EOF
     dpkg-deb --root-owner-group --build "$root" "$dist_dir/Auremi-$version-linux-$go_arch.deb"
     rm -rf "$root"

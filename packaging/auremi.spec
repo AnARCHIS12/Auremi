@@ -1,8 +1,8 @@
 Name:           auremi
 Version:        %{auremi_version}
 Release:        1%{?dist}
-Summary:        Simple AppImage integration for Linux desktops
-Summary(fr):    Intégration simple des AppImage aux bureaux Linux
+Summary:        Install, update, and uninstall AppImages
+Summary(fr):    Installer, mettre à jour et désinstaller des AppImage
 License:        MIT
 URL:            https://github.com/AnARCHIS12/appimage-integrator
 %description
@@ -49,5 +49,8 @@ command -v appstreamcli >/dev/null 2>&1 && appstreamcli refresh-cache --force ||
 /usr/share/metainfo/io.github.anarchis12.auremi.metainfo.xml
 
 %changelog
+* Sun Nov 01 2026 AnARCHIS12 <noreply@github.com> - %{auremi_version}-1
+- Add graphical AppImage update and uninstallation management.
+
 * Wed Oct 07 2026 AnARCHIS12 <noreply@github.com> - %{auremi_version}-1
 - Add native double-click installation packages.

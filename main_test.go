@@ -183,6 +183,56 @@ func TestInstalledDesktopEntryIncludesApplicationVersion(t *testing.T) {
 	}
 }
 
+func TestUpdateKeepsManagedIdentityAndPreservesSources(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	firstSource := filepath.Join(root, "first", "Demo.AppImage")
+	secondSource := filepath.Join(root, "second", "Demo.AppImage")
+	writeTestAppImage(t, firstSource, 1)
+	writeTestAppImage(t, secondSource, 2)
+
+	first, err := integrate(firstSource, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := integrateWithID(secondSource, false, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != first.ID || updated.DesktopFile != first.DesktopFile {
+		t.Fatalf("managed identity changed: before=%#v after=%#v", first, updated)
+	}
+	if updated.Source != secondSource || updated.SHA256 == first.SHA256 {
+		t.Fatalf("updated AppImage was not recorded: before=%#v after=%#v", first, updated)
+	}
+	if err := removeCommand([]string{updated.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Dir(updated.Installed)); !os.IsNotExist(err) {
+		t.Fatalf("managed application directory still exists: %v", err)
+	}
+	for _, source := range []string{firstSource, secondSource} {
+		if _, err := os.Stat(source); err != nil {
+			t.Fatalf("source file was removed: %s", source)
+		}
+	}
+}
+
+func writeTestAppImage(t *testing.T, path string, marker byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := make([]byte, 4096)
+	copy(body[:4], "\x7fELF")
+	copy(body[8:11], []byte{'A', 'I', 2})
+	body[len(body)-1] = marker
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeTestPNG(t *testing.T, path string, size int) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

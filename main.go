@@ -32,7 +32,7 @@ import (
 const (
 	programName = "appimage-integrator"
 	productName = "Aurémi"
-	version     = "0.3.4"
+	version     = "0.4.0"
 	handlerID   = "appimage-integrator-handler.desktop"
 	launcherID  = "io.github.anarchis12.auremi.desktop"
 	metainfoID  = "io.github.anarchis12.auremi.metainfo.xml"
@@ -103,8 +103,12 @@ func run(args []string) error {
 		return setupCommand(args[1:])
 	case "welcome":
 		return welcomeCommand()
+	case "manage":
+		return manageCommand()
 	case "list":
 		return listCommand()
+	case "update":
+		return updateCommand(args[1:])
 	case "remove", "uninstall":
 		return removeCommand(args[1:])
 	case "version", "--version", "-v":
@@ -133,34 +137,24 @@ Usage:
   %s setup --user              Install the handler for the current user
   sudo %s setup --system       Install the handler for every user
   %s integrate file.AppImage
+  %s update ID file.AppImage
+  %s manage
   %s list
   %s remove ID
 
 Integration never launches the AppImage and never deletes the source file.
-`, programName, version, programName, programName, programName, programName, programName)
+`, programName, version, programName, programName, programName, programName, programName, programName, programName)
 }
 
 func welcomeCommand() error {
-	message := fmt.Sprintf("Aurémi %s\n\nTo install an AppImage:\n1. Download the .AppImage file.\n2. Double-click it.\n3. Aurémi adds it to your application menu and desktop.\n\nThe original downloaded file is always preserved.", version)
+	message := fmt.Sprintf("Aurémi %s\n\nDouble-click a downloaded AppImage to install it.\n\nOpen the application manager to update or uninstall integrated applications.\nThe original downloaded files are always preserved.", version)
 	if os.Getenv("AUREMI_NO_DIALOG") == "1" {
 		fmt.Println(message)
 		return nil
 	}
-	icon := installedAuremiIcon()
-	if path, err := exec.LookPath("kdialog"); err == nil {
-		return exec.Command(path, "--title", productName, "--icon", icon, "--msgbox", message).Run()
+	if dialogQuestion(message, "Manage applications", "Close") {
+		return manageCommand()
 	}
-	if path, err := exec.LookPath("zenity"); err == nil {
-		return exec.Command(path, "--info", "--title="+productName, "--icon-name="+icon, "--text="+message).Run()
-	}
-	if path, err := exec.LookPath("yad"); err == nil {
-		return exec.Command(path, "--info", "--title="+productName, "--window-icon="+icon, "--text="+message, "--button=OK:0").Run()
-	}
-	if path, err := exec.LookPath("xmessage"); err == nil {
-		return exec.Command(path, "-center", "-title", productName, "-buttons", "OK:0", message).Run()
-	}
-	notify(productName, message, icon)
-	fmt.Println(message)
 	return nil
 }
 
@@ -194,6 +188,10 @@ func integrateCommand(args []string) error {
 }
 
 func integrate(input string, desktopShortcut bool) (*appMetadata, error) {
+	return integrateWithID(input, desktopShortcut, "")
+}
+
+func integrateWithID(input string, desktopShortcut bool, forcedID string) (*appMetadata, error) {
 	source, err := filepath.Abs(input)
 	if err != nil {
 		return nil, err
@@ -231,9 +229,11 @@ func integrate(input string, desktopShortcut bool) (*appMetadata, error) {
 	defer os.RemoveAll(tmp)
 
 	extracted, extractErr := extractMetadata(source, tmp)
+	metadataIdentified := false
 	if extractErr == nil {
 		if parsed, err := findAndParseDesktop(extracted); err == nil {
 			mergeDesktopMetadata(&meta, parsed)
+			metadataIdentified = true
 		}
 		if meta.Version == "" {
 			meta.Version = findAppStreamVersion(extracted, meta.DesktopID)
@@ -245,13 +245,29 @@ func integrate(input string, desktopShortcut bool) (*appMetadata, error) {
 	if meta.Version == "" {
 		meta.Version = versionFromFilename(source)
 	}
-	id := uniqueID(slugify(meta.Name), source, p.appsRoot)
+	id := forcedID
+	var previous appMetadata
+	if id == "" {
+		id = uniqueID(slugify(meta.Name), source, p.appsRoot)
+	} else {
+		previous, err = managedAppByID(p, id)
+		if err != nil {
+			return nil, err
+		}
+		if metadataIdentified && slugify(previous.Name) != slugify(meta.Name) {
+			return nil, fmt.Errorf("selected file is %s, expected an update for %s", meta.Name, previous.Name)
+		}
+	}
 	appDir := filepath.Join(p.appsRoot, id)
 	installed := filepath.Join(appDir, safeAppImageFilename(meta.Name))
-	entry := preferredDesktopEntry(p.appEntries, meta.DesktopID, id, source)
-	var previous appMetadata
-	if data, err := os.ReadFile(filepath.Join(appDir, "metadata.json")); err == nil {
-		_ = json.Unmarshal(data, &previous)
+	entry := previous.DesktopFile
+	if entry == "" || !isWithin(entry, p.appEntries) {
+		entry = preferredDesktopEntry(p.appEntries, meta.DesktopID, id, source)
+	}
+	if previous.ID == "" {
+		if data, err := os.ReadFile(filepath.Join(appDir, "metadata.json")); err == nil {
+			_ = json.Unmarshal(data, &previous)
+		}
 	}
 
 	for _, dir := range []string{appDir, p.appEntries, p.iconsRoot} {
@@ -318,6 +334,30 @@ func integrate(input string, desktopShortcut bool) (*appMetadata, error) {
 	cleanupPreviousIntegration(previous, *result, p)
 	refreshDesktop(p)
 	return result, nil
+}
+
+func updateCommand(args []string) error {
+	if len(args) != 2 {
+		return errors.New("provide the managed application ID and a new AppImage file")
+	}
+	p, err := userPaths()
+	if err != nil {
+		return err
+	}
+	previous, err := managedAppByID(p, args[0])
+	if err != nil {
+		return err
+	}
+	shortcut := desktopShortcutExists(previous, p)
+	result, err := integrateWithID(args[1], shortcut, previous.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s updated\n", result.Name)
+	if result.Version != "" {
+		fmt.Printf("Version: %s\n", result.Version)
+	}
+	return nil
 }
 
 func validateAppImageHeader(path string) error {
@@ -884,8 +924,14 @@ func cleanupPreviousIntegration(previous, current appMetadata, p paths) {
 	if previous.ID != current.ID {
 		return
 	}
+	if previous.Installed != "" && previous.Installed != current.Installed && isWithin(previous.Installed, filepath.Join(p.appsRoot, previous.ID)) {
+		_ = os.Remove(previous.Installed)
+	}
 	if previous.DesktopFile != "" && previous.DesktopFile != current.DesktopFile && isWithin(previous.DesktopFile, p.appEntries) {
 		_ = os.Remove(previous.DesktopFile)
+	}
+	if p.desktopDir != "" && previous.Name != current.Name {
+		_ = os.Remove(filepath.Join(p.desktopDir, safeDesktopFilename(previous.Name)+".desktop"))
 	}
 	oldIcons := previous.Icons
 	if len(oldIcons) == 0 && previous.Icon != "" {
@@ -1022,16 +1068,16 @@ MimeType=application/vnd.appimage;application/x-iso9660-appimage;
 Version=1.0
 Type=Application
 Name=Aurémi
-Comment=Install and integrate AppImages with a double-click
-Comment[fr]=Installer et intégrer des AppImage par un double-clic
-Exec=%s welcome
+Comment=Install, update, and uninstall integrated AppImages
+Comment[fr]=Installer, mettre à jour et désinstaller les AppImage intégrées
+Exec=%s manage
 TryExec=%s
 Icon=%s
 Terminal=false
 StartupNotify=true
 Categories=Utility;
-Keywords=AppImage;Installer;Integration;
-Keywords[fr]=AppImage;Installation;Intégration;
+Keywords=AppImage;Installer;Integration;Update;Uninstall;
+Keywords[fr]=AppImage;Installation;Intégration;Mise à jour;Désinstallation;
 `, quoteExec(binary), cleanDesktopValue(binary), cleanDesktopValue(iconPath))
 	if err := writeAtomic(filepath.Join(apps, launcherID), []byte(launcher), 0o644); err != nil {
 		return err
@@ -1096,62 +1142,279 @@ func updateINIList(content, section, key, value string) string {
 	return strings.Join(lines, "\n")
 }
 
+func manageCommand() error {
+	p, err := userPaths()
+	if err != nil {
+		return err
+	}
+	apps, err := managedApps(p)
+	if err != nil {
+		return err
+	}
+	if len(apps) == 0 {
+		dialogMessage("No integrated AppImages were found.", false)
+		return nil
+	}
+	selected, ok := selectManagedApplication(apps)
+	if !ok {
+		return nil
+	}
+	action, ok := dialogChoice("Manage "+selected.Name, "Choose an action", [][2]string{
+		{"update", "Update from a new AppImage"},
+		{"remove", "Uninstall"},
+	})
+	if !ok {
+		return nil
+	}
+	if action == "remove" {
+		return manageRemoval(selected)
+	}
+	return manageUpdate(selected, p)
+}
+
+func manageRemoval(m appMetadata) error {
+	question := "Uninstall " + m.Name + "?\n\nIts managed AppImage, launcher, and icons will be removed.\nThe original download and application data will be preserved."
+	if !dialogQuestion(question, "Uninstall", "Cancel") {
+		return nil
+	}
+	if err := removeCommand([]string{m.ID}); err != nil {
+		dialogMessage(err.Error(), true)
+		return err
+	}
+	dialogMessage(m.Name+" was uninstalled.", false)
+	return nil
+}
+
+func manageUpdate(m appMetadata, p paths) error {
+	file, ok := selectAppImageFile()
+	if !ok {
+		return nil
+	}
+	result, err := integrateWithID(file, desktopShortcutExists(m, p), m.ID)
+	if err != nil {
+		dialogMessage("Update failed:\n"+err.Error(), true)
+		return err
+	}
+	message := result.Name + " was updated successfully."
+	if result.Version != "" {
+		message += "\n\nVersion: " + result.Version
+	}
+	dialogMessage(message, false)
+	return nil
+}
+
+func selectManagedApplication(apps []appMetadata) (appMetadata, bool) {
+	choices := make([][2]string, 0, len(apps))
+	byID := make(map[string]appMetadata, len(apps))
+	for _, app := range apps {
+		label := app.Name
+		if app.Version != "" {
+			label += "  " + app.Version
+		}
+		choices = append(choices, [2]string{app.ID, label})
+		byID[app.ID] = app
+	}
+	id, ok := dialogChoice(fmt.Sprintf("Aurémi %s application manager", version), "Select an integrated application", choices)
+	app, exists := byID[id]
+	return app, ok && exists
+}
+
+func dialogChoice(title, message string, choices [][2]string) (string, bool) {
+	icon := installedAuremiIcon()
+	if path, err := exec.LookPath("kdialog"); err == nil {
+		args := []string{"--title", title, "--icon", icon, "--menu", message}
+		for _, choice := range choices {
+			args = append(args, choice[0], choice[1])
+		}
+		return dialogOutput(path, args...)
+	}
+	if path, err := exec.LookPath("zenity"); err == nil {
+		args := []string{"--list", "--title=" + title, "--text=" + message, "--window-icon=" + icon, "--column=ID", "--column=Application", "--hide-column=1", "--print-column=1", "--width=640", "--height=420"}
+		return dialogOutput(path, appendDialogRows(args, choices)...)
+	}
+	if path, err := exec.LookPath("yad"); err == nil {
+		args := []string{"--list", "--title=" + title, "--text=" + message, "--window-icon=" + icon, "--column=ID:HD", "--column=Application", "--print-column=1", "--width=640", "--height=420"}
+		return dialogOutput(path, appendDialogRows(args, choices)...)
+	}
+	fmt.Println(message)
+	for _, choice := range choices {
+		fmt.Printf("%s\t%s\n", choice[0], choice[1])
+	}
+	return "", false
+}
+
+func appendDialogRows(args []string, choices [][2]string) []string {
+	for _, choice := range choices {
+		args = append(args, choice[0], choice[1])
+	}
+	return args
+}
+
+func dialogOutput(path string, args ...string) (string, bool) {
+	out, err := exec.Command(path, args...).Output()
+	if err != nil {
+		return "", false
+	}
+	value := strings.TrimSpace(string(out))
+	return value, value != ""
+}
+
+func selectAppImageFile() (string, bool) {
+	home, _ := os.UserHomeDir()
+	icon := installedAuremiIcon()
+	if path, err := exec.LookPath("kdialog"); err == nil {
+		return dialogOutput(path, "--title", "Select the new AppImage", "--icon", icon, "--getopenfilename", home, "*.AppImage *.appimage|AppImage applications")
+	}
+	if path, err := exec.LookPath("zenity"); err == nil {
+		return dialogOutput(path, "--file-selection", "--title=Select the new AppImage", "--window-icon="+icon, "--file-filter=AppImage applications | *.AppImage *.appimage")
+	}
+	if path, err := exec.LookPath("yad"); err == nil {
+		return dialogOutput(path, "--file-selection", "--title=Select the new AppImage", "--window-icon="+icon, "--file-filter=AppImage applications | *.AppImage *.appimage")
+	}
+	return "", false
+}
+
+func dialogQuestion(message, acceptLabel, cancelLabel string) bool {
+	icon := installedAuremiIcon()
+	if path, err := exec.LookPath("kdialog"); err == nil {
+		return exec.Command(path, "--title", productName, "--icon", icon, "--yesno", message, "--yes-label", acceptLabel, "--no-label", cancelLabel).Run() == nil
+	}
+	if path, err := exec.LookPath("zenity"); err == nil {
+		return exec.Command(path, "--question", "--title="+productName, "--window-icon="+icon, "--text="+message, "--ok-label="+acceptLabel, "--cancel-label="+cancelLabel).Run() == nil
+	}
+	if path, err := exec.LookPath("yad"); err == nil {
+		return exec.Command(path, "--question", "--title="+productName, "--window-icon="+icon, "--text="+message, "--button="+acceptLabel+":0", "--button="+cancelLabel+":1").Run() == nil
+	}
+	if path, err := exec.LookPath("xmessage"); err == nil {
+		return exec.Command(path, "-center", "-title", productName, "-buttons", acceptLabel+":0,"+cancelLabel+":1", message).Run() == nil
+	}
+	fmt.Println(message)
+	return false
+}
+
+func dialogMessage(message string, failure bool) {
+	icon := installedAuremiIcon()
+	if path, err := exec.LookPath("kdialog"); err == nil {
+		mode := "--msgbox"
+		if failure {
+			mode = "--error"
+		}
+		_ = exec.Command(path, "--title", productName, "--icon", icon, mode, message).Run()
+		return
+	}
+	if path, err := exec.LookPath("zenity"); err == nil {
+		mode := "--info"
+		if failure {
+			mode = "--error"
+		}
+		_ = exec.Command(path, mode, "--title="+productName, "--window-icon="+icon, "--text="+message).Run()
+		return
+	}
+	if path, err := exec.LookPath("yad"); err == nil {
+		mode := "--info"
+		if failure {
+			mode = "--error"
+		}
+		_ = exec.Command(path, mode, "--title="+productName, "--window-icon="+icon, "--text="+message, "--button=OK:0").Run()
+		return
+	}
+	if path, err := exec.LookPath("xmessage"); err == nil {
+		_ = exec.Command(path, "-center", "-title", productName, "-buttons", "OK:0", message).Run()
+		return
+	}
+	fmt.Println(message)
+}
+
 func listCommand() error {
 	p, err := userPaths()
 	if err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(p.appsRoot)
-	if errors.Is(err, os.ErrNotExist) {
-		fmt.Println("No integrated AppImages.")
-		return nil
-	}
+	apps, err := managedApps(p)
 	if err != nil {
 		return err
 	}
+	if len(apps) == 0 {
+		fmt.Println("No integrated AppImages.")
+		return nil
+	}
+	for _, m := range apps {
+		appVersion := m.Version
+		if appVersion == "" {
+			appVersion = "unknown"
+		}
+		fmt.Printf("%-28s %-18s %s\n", m.ID, appVersion, m.Name)
+	}
+	return nil
+}
+
+func managedApps(p paths) ([]appMetadata, error) {
+	entries, err := os.ReadDir(p.appsRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	apps := make([]appMetadata, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(p.appsRoot, entry.Name(), "metadata.json"))
 		var m appMetadata
-		if err == nil && json.Unmarshal(data, &m) == nil {
-			if m.Version != "" {
-				fmt.Printf("%-28s %-18s %s\n", m.ID, m.Version, m.Name)
-			} else {
-				fmt.Printf("%-28s %-18s %s\n", m.ID, "unknown", m.Name)
-			}
-		} else {
-			fmt.Println(entry.Name())
+		if err == nil && json.Unmarshal(data, &m) == nil && m.ID == entry.Name() {
+			apps = append(apps, m)
 		}
 	}
-	return nil
+	sort.Slice(apps, func(i, j int) bool {
+		return strings.ToLower(apps[i].Name) < strings.ToLower(apps[j].Name)
+	})
+	return apps, nil
+}
+
+func managedAppByID(p paths, id string) (appMetadata, error) {
+	if slugify(id) != id || id == "" {
+		return appMetadata{}, errors.New("invalid ID")
+	}
+	appDir := filepath.Join(p.appsRoot, id)
+	if !isWithin(appDir, p.appsRoot) {
+		return appMetadata{}, errors.New("unsafe application path rejected")
+	}
+	data, err := os.ReadFile(filepath.Join(appDir, "metadata.json"))
+	if err != nil {
+		return appMetadata{}, errors.New("managed application not found")
+	}
+	var m appMetadata
+	if err := json.Unmarshal(data, &m); err != nil || m.ID != id {
+		return appMetadata{}, errors.New("invalid managed application metadata")
+	}
+	return m, nil
+}
+
+func desktopShortcutExists(m appMetadata, p paths) bool {
+	if p.desktopDir == "" {
+		return false
+	}
+	path := filepath.Join(p.desktopDir, safeDesktopFilename(m.Name)+".desktop")
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func removeCommand(args []string) error {
 	if len(args) != 1 {
 		return errors.New("provide the ID displayed by the list command")
 	}
-	id := args[0]
-	if slugify(id) != id || id == "" {
-		return errors.New("invalid ID")
-	}
 	p, err := userPaths()
 	if err != nil {
 		return err
 	}
-	appDir := filepath.Join(p.appsRoot, id)
-	if !isWithin(appDir, p.appsRoot) {
-		return errors.New("unsafe removal path rejected")
-	}
-	data, err := os.ReadFile(filepath.Join(appDir, "metadata.json"))
+	id := args[0]
+	m, err := managedAppByID(p, id)
 	if err != nil {
-		return errors.New("managed application not found")
+		return err
 	}
-	var m appMetadata
-	if err := json.Unmarshal(data, &m); err != nil || m.ID != id {
-		return errors.New("invalid removal metadata")
-	}
+	appDir := filepath.Join(p.appsRoot, id)
 	if !isWithin(m.DesktopFile, p.appEntries) {
 		return errors.New("invalid launcher path in metadata")
 	}
