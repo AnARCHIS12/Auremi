@@ -1,5 +1,5 @@
 Types: deb
-URIs: https://anarchis12.github.io/appimage-integrator/apt
+URIs: https://anarchis12.github.io/Auremi/apt
 Suites: stable
 Components: main
 Architectures: amd64 arm64

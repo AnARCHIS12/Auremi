@@ -49,9 +49,9 @@ Installing from the official repository gives the software manager a trusted pub
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL https://anarchis12.github.io/appimage-integrator/auremi-signing-key.asc \
+curl -fsSL https://anarchis12.github.io/Auremi/auremi-signing-key.asc \
   | sudo gpg --dearmor --yes -o /etc/apt/keyrings/auremi.gpg
-curl -fsSL https://anarchis12.github.io/appimage-integrator/auremi.sources \
+curl -fsSL https://anarchis12.github.io/Auremi/auremi.sources \
   | sudo tee /etc/apt/sources.list.d/auremi.sources >/dev/null
 sudo apt update
 sudo apt install auremi
@@ -60,7 +60,7 @@ sudo apt install auremi
 **Fedora:**
 
 ```bash
-sudo curl -fsSL https://anarchis12.github.io/appimage-integrator/auremi.repo \
+sudo curl -fsSL https://anarchis12.github.io/Auremi/auremi.repo \
   -o /etc/yum.repos.d/auremi.repo
 sudo dnf install auremi
 ```
