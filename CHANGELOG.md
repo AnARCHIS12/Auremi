@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-25
+
+### Added
+
+- Generated `48x48` and `32x32` PNG icon variants alongside `256x256`, `128x128`, and `64x64` for taskbar and dock applets.
+- Automatically refreshed `cosmic-panel` under COSMIC sessions during desktop refresh so newly integrated applications and icons appear immediately in the dock and taskbar without relogging.
+
 ## [0.4.1] — 2026-11-25
 
 ### Added
@@ -115,7 +122,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Automated tagged releases through GitHub Actions.
 - SHA-256 checksums for release assets.
 
-[Unreleased]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.3...v0.3.4

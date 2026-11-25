@@ -31,6 +31,11 @@
     <name>AnARCHIS12</name>
   </developer>
   <releases>
+    <release version="0.4.2" date="2026-11-25">
+      <description>
+        <p>Adds 48x48 and 32x32 icon variants, refreshes cosmic-panel automatically under COSMIC so new taskbar icons appear immediately, and fixes GitHub Pages repository URLs.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-11-25">
       <description>
         <p>Adds COSMIC desktop icon support by normalizing icons into standard hicolor dimensions, using themed icon names in desktop entries, and repairing previously integrated launchers.</p>

@@ -33,7 +33,7 @@ import (
 const (
 	programName = "appimage-integrator"
 	productName = "Aurémi"
-	version     = "0.4.1"
+	version     = "0.4.2"
 	handlerID   = "appimage-integrator-handler.desktop"
 	launcherID  = "io.github.anarchis12.auremi.desktop"
 	metainfoID  = "io.github.anarchis12.auremi.metainfo.xml"
@@ -766,7 +766,7 @@ func findBestIcons(root string, meta desktopMetadata) []iconCandidate {
 }
 
 var standardHicolorSizes = []int{16, 22, 24, 32, 36, 48, 64, 72, 96, 128, 192, 256, 512}
-var cosmicRecommendedPNGSizes = []int{256, 128, 64}
+var cosmicRecommendedPNGSizes = []int{256, 128, 64, 48, 32}
 
 func nearestHicolorSize(dim int) int {
 	if dim >= 512 {
@@ -1882,6 +1882,28 @@ func refreshDesktop(p paths) {
 	runOptional("update-desktop-database", p.appEntries)
 	runOptional("gtk-update-icon-cache", "-q", "-t", "-f", filepath.Join(p.dataHome, "icons", "hicolor"))
 	runOptional("kbuildsycoca6", "--noincremental")
+	refreshCosmicPanel()
+}
+
+func isCosmicDesktop() bool {
+	for _, key := range []string{"XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"} {
+		if strings.Contains(strings.ToLower(os.Getenv(key)), "cosmic") {
+			return true
+		}
+	}
+	return false
+}
+
+func refreshCosmicPanel() {
+	if !isCosmicDesktop() || os.Getenv("WAYLAND_DISPLAY") == "" || flag.Lookup("test.v") != nil {
+		return
+	}
+	if _, err := exec.LookPath("pkill"); err != nil {
+		return
+	}
+	// cosmic-app-list caches hicolor icon lookups in memory; restarting cosmic-panel
+	// lets cosmic-session respawn it immediately with the new desktop entry and icons.
+	runOptional("pkill", "-x", "cosmic-panel")
 }
 
 func repairCommand() error {

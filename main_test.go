@@ -269,7 +269,7 @@ func TestInstallIconsNormalizesOversizedPNGForCosmic(t *testing.T) {
 			t.Fatalf("oversized 1024x1024 icon should not be installed in hicolor: %s", p)
 		}
 	}
-	for _, wantSize := range []string{"512x512", "256x256", "128x128", "64x64"} {
+	for _, wantSize := range []string{"512x512", "256x256", "128x128", "64x64", "48x48", "32x32"} {
 		wantPath := filepath.Join(dataHome, "icons", "hicolor", wantSize, "apps", "appimage-demo.png")
 		if _, err := os.Stat(wantPath); err != nil {
 			t.Fatalf("missing normalized icon %s: %v", wantPath, err)

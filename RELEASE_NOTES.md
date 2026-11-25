@@ -1,14 +1,12 @@
-# Aurémi 0.4.1
+# Aurémi 0.4.2
 
-This release adds full COSMIC desktop icon support while preserving full compatibility with KDE, GNOME, and other Freedesktop environments.
+This release ensures newly integrated AppImages and their icons appear immediately in COSMIC's dock and taskbar, and fixes the GitHub Pages repository URLs.
 
 ## Highlights
 
-- Uses standard Freedesktop themed icon names (`Icon=<id>` and `Icon=auremi`) in generated `.desktop` launchers so COSMIC's launcher, app library, dock, and file manager resolve application icons reliably.
-- Normalizes oversized (such as `1024x1024`) and non-square PNG icons into standard `hicolor` theme directories (`512x512`, `256x256`, `128x128`, `64x64`).
-- Refreshes desktop and icon directory timestamps alongside `update-desktop-database`, `gtk-update-icon-cache`, and `kbuildsycoca6`.
-- Adds `appimage-integrator repair-icons` (also run automatically on `setup --user`) to migrate existing integrated applications.
-- Signs every executable, installer archive, DEB, RPM, and checksum file with keyless Sigstore signing.
+- Generates `48x48` and `32x32` PNG icon sizes in addition to `512x512`, `256x256`, `128x128`, and `64x64`.
+- Refreshes `cosmic-panel` automatically under COSMIC sessions when integrating, updating, repairing, or removing an AppImage so `cosmic-app-list` picks up new icons immediately.
+- Updates `auremi.repo`, `auremi.sources`, and `README.md` to point to `https://anarchis12.github.io/Auremi/`.
 
 ## Downloads
 
