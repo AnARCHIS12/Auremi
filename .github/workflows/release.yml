@@ -70,7 +70,7 @@ jobs:
           rpm --dbpath "$rpmdb" --initdb
           rpm --dbpath "$rpmdb" --import packaging/auremi-signing-key.asc
           rpm --dbpath "$rpmdb" --checksig --verbose dist/Auremi-*.rpm | tee "$RUNNER_TEMP/rpm-signatures.txt"
-          test "$(grep -c 'Signature, key ID 4250d249: OK' "$RUNNER_TEMP/rpm-signatures.txt")" -eq 2
+          test "$(grep -Eic '(key ID 4250d249|key fingerprint: 96ffeb2c0e58a11010fe8543a684d249dcbb2e24): OK' "$RUNNER_TEMP/rpm-signatures.txt")" -eq 2
 
       - name: Create checksums and signed repositories
         run: |
