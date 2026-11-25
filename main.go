@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	_ "embed"
@@ -15,7 +16,7 @@ import (
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
-	_ "image/png"
+	"image/png"
 	"io"
 	"io/fs"
 	"os"
@@ -32,7 +33,7 @@ import (
 const (
 	programName = "appimage-integrator"
 	productName = "Aurémi"
-	version     = "0.4.0"
+	version     = "0.4.1"
 	handlerID   = "appimage-integrator-handler.desktop"
 	launcherID  = "io.github.anarchis12.auremi.desktop"
 	metainfoID  = "io.github.anarchis12.auremi.metainfo.xml"
@@ -111,6 +112,8 @@ func run(args []string) error {
 		return updateCommand(args[1:])
 	case "remove", "uninstall":
 		return removeCommand(args[1:])
+	case "repair", "repair-icons":
+		return repairCommand()
 	case "version", "--version", "-v":
 		fmt.Println(programName, version)
 		return nil
@@ -141,9 +144,10 @@ Usage:
   %s manage
   %s list
   %s remove ID
+  %s repair-icons
 
 Integration never launches the AppImage and never deletes the source file.
-`, programName, version, programName, programName, programName, programName, programName, programName, programName)
+`, programName, version, programName, programName, programName, programName, programName, programName, programName, programName)
 }
 
 func welcomeCommand() error {
@@ -299,7 +303,7 @@ func integrateWithID(input string, desktopShortcut bool, forcedID string) (*appM
 		iconPaths = []string{iconPath}
 	}
 
-	desktopBody := installedDesktopEntry(meta, installed, iconPath, source)
+	desktopBody := installedDesktopEntry(meta, installed, id, source)
 	if err := writeAtomic(entry, []byte(desktopBody), 0o755); err != nil {
 		return nil, err
 	}
@@ -761,9 +765,201 @@ func findBestIcons(root string, meta desktopMetadata) []iconCandidate {
 	return selected
 }
 
+var standardHicolorSizes = []int{16, 22, 24, 32, 36, 48, 64, 72, 96, 128, 192, 256, 512}
+var cosmicRecommendedPNGSizes = []int{256, 128, 64}
+
+func nearestHicolorSize(dim int) int {
+	if dim >= 512 {
+		return 512
+	}
+	for i := len(standardHicolorSizes) - 1; i >= 0; i-- {
+		if standardHicolorSizes[i] <= dim {
+			return standardHicolorSizes[i]
+		}
+	}
+	return 16
+}
+
+func isStandardHicolorSize(w, h int) bool {
+	if w != h {
+		return false
+	}
+	for _, s := range standardHicolorSizes {
+		if w == s {
+			return true
+		}
+	}
+	return false
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// resizeImageNRGBA scales src proportionally into a transparent targetSize x targetSize square.
+func resizeImageNRGBA(src image.Image, targetSize int) *image.NRGBA {
+	dst := image.NewNRGBA(image.Rect(0, 0, targetSize, targetSize))
+	sb := src.Bounds()
+	sw, sh := sb.Dx(), sb.Dy()
+	if sw <= 0 || sh <= 0 || targetSize <= 0 {
+		return dst
+	}
+	scale := float64(targetSize) / float64(maxInt(sw, sh))
+	dw := int(float64(sw)*scale + 0.5)
+	dh := int(float64(sh)*scale + 0.5)
+	if dw < 1 {
+		dw = 1
+	}
+	if dh < 1 {
+		dh = 1
+	}
+	offX := (targetSize - dw) / 2
+	offY := (targetSize - dh) / 2
+
+	srcNRGBA := image.NewNRGBA(image.Rect(0, 0, sw, sh))
+	for y := 0; y < sh; y++ {
+		for x := 0; x < sw; x++ {
+			srcNRGBA.Set(x, y, src.At(sb.Min.X+x, sb.Min.Y+y))
+		}
+	}
+
+	for dy := 0; dy < dh; dy++ {
+		sy := (float64(dy)+0.5)*float64(sh)/float64(dh) - 0.5
+		if sy < 0 {
+			sy = 0
+		}
+		if sy > float64(sh-1) {
+			sy = float64(sh - 1)
+		}
+		y0 := int(sy)
+		y1 := y0 + 1
+		if y1 >= sh {
+			y1 = sh - 1
+		}
+		wy := sy - float64(y0)
+		for dx := 0; dx < dw; dx++ {
+			sx := (float64(dx)+0.5)*float64(sw)/float64(dw) - 0.5
+			if sx < 0 {
+				sx = 0
+			}
+			if sx > float64(sw-1) {
+				sx = float64(sw - 1)
+			}
+			x0 := int(sx)
+			x1 := x0 + 1
+			if x1 >= sw {
+				x1 = sw - 1
+			}
+			wx := sx - float64(x0)
+
+			c00 := srcNRGBA.NRGBAAt(x0, y0)
+			c10 := srcNRGBA.NRGBAAt(x1, y0)
+			c01 := srcNRGBA.NRGBAAt(x0, y1)
+			c11 := srcNRGBA.NRGBAAt(x1, y1)
+
+			interp := func(v00, v10, v01, v11 uint8) uint8 {
+				top := float64(v00)*(1-wx) + float64(v10)*wx
+				bot := float64(v01)*(1-wx) + float64(v11)*wx
+				val := top*(1-wy) + bot*wy + 0.5
+				if val < 0 {
+					return 0
+				}
+				if val > 255 {
+					return 255
+				}
+				return uint8(val)
+			}
+
+			r := interp(c00.R, c10.R, c01.R, c11.R)
+			g := interp(c00.G, c10.G, c01.G, c11.G)
+			b := interp(c00.B, c10.B, c01.B, c11.B)
+			a := interp(c00.A, c10.A, c01.A, c11.A)
+			dst.Pix[(offY+dy)*dst.Stride+(offX+dx)*4+0] = r
+			dst.Pix[(offY+dy)*dst.Stride+(offX+dx)*4+1] = g
+			dst.Pix[(offY+dy)*dst.Stride+(offX+dx)*4+2] = b
+			dst.Pix[(offY+dy)*dst.Stride+(offX+dx)*4+3] = a
+		}
+	}
+	return dst
+}
+
+func writePNGImage(img image.Image, destination string) error {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return err
+	}
+	return writeAtomic(destination, buf.Bytes(), 0o644)
+}
+
 func installIcons(candidates []iconCandidate, dataHome, id string) []string {
 	var installed []string
+	installedSlots := make(map[string]bool)
+	var largestPNG image.Image
+	largestDim := 0
+	hasSVG := false
+
 	for _, candidate := range candidates {
+		if candidate.ext == ".svg" {
+			iconDir := filepath.Join(dataHome, "icons", "hicolor", "scalable", "apps")
+			if err := os.MkdirAll(iconDir, 0o755); err != nil {
+				continue
+			}
+			destination := filepath.Join(iconDir, id+".svg")
+			if err := copyFileAtomic(candidate.path, destination, 0o644); err == nil {
+				installed = append(installed, destination)
+				installedSlots["scalable.svg"] = true
+				hasSVG = true
+			}
+			continue
+		}
+		if candidate.ext == ".png" {
+			f, err := os.Open(candidate.path)
+			if err == nil {
+				img, _, decErr := image.Decode(io.LimitReader(f, 16<<20))
+				_ = f.Close()
+				if decErr == nil {
+					b := img.Bounds()
+					w, h := b.Dx(), b.Dy()
+					dim := maxInt(w, h)
+					if dim > largestDim {
+						largestDim = dim
+						largestPNG = img
+					}
+					if isStandardHicolorSize(w, h) {
+						sizeDir := strconv.Itoa(w) + "x" + strconv.Itoa(h)
+						slot := sizeDir + ".png"
+						if !installedSlots[slot] {
+							iconDir := filepath.Join(dataHome, "icons", "hicolor", sizeDir, "apps")
+							if err := os.MkdirAll(iconDir, 0o755); err == nil {
+								destination := filepath.Join(iconDir, id+".png")
+								if err := copyFileAtomic(candidate.path, destination, 0o644); err == nil {
+									installed = append(installed, destination)
+									installedSlots[slot] = true
+								}
+							}
+						}
+						continue
+					}
+					target := nearestHicolorSize(dim)
+					sizeDir := strconv.Itoa(target) + "x" + strconv.Itoa(target)
+					slot := sizeDir + ".png"
+					if !installedSlots[slot] {
+						iconDir := filepath.Join(dataHome, "icons", "hicolor", sizeDir, "apps")
+						if err := os.MkdirAll(iconDir, 0o755); err == nil {
+							destination := filepath.Join(iconDir, id+".png")
+							if err := writePNGImage(resizeImageNRGBA(img, target), destination); err == nil {
+								installed = append(installed, destination)
+								installedSlots[slot] = true
+							}
+						}
+					}
+					continue
+				}
+			}
+		}
 		iconDir := filepath.Join(dataHome, "icons", "hicolor", candidate.sizeDir, "apps")
 		if err := os.MkdirAll(iconDir, 0o755); err != nil {
 			continue
@@ -773,6 +969,29 @@ func installIcons(candidates []iconCandidate, dataHome, id string) []string {
 			installed = append(installed, destination)
 		}
 	}
+
+	if largestPNG != nil && !hasSVG {
+		for _, sz := range cosmicRecommendedPNGSizes {
+			if largestDim < sz {
+				continue
+			}
+			sizeDir := strconv.Itoa(sz) + "x" + strconv.Itoa(sz)
+			slot := sizeDir + ".png"
+			if installedSlots[slot] {
+				continue
+			}
+			iconDir := filepath.Join(dataHome, "icons", "hicolor", sizeDir, "apps")
+			if err := os.MkdirAll(iconDir, 0o755); err != nil {
+				continue
+			}
+			destination := filepath.Join(iconDir, id+".png")
+			if err := writePNGImage(resizeImageNRGBA(largestPNG, sz), destination); err == nil {
+				installed = append(installed, destination)
+				installedSlots[slot] = true
+			}
+		}
+	}
+
 	return installed
 }
 
@@ -851,7 +1070,8 @@ func iconSizeDir(path string) string {
 	if err != nil || cfg.Width < 16 || cfg.Height < 16 {
 		return "512x512"
 	}
-	return strconv.Itoa(cfg.Width) + "x" + strconv.Itoa(cfg.Height)
+	s := nearestHicolorSize(maxInt(cfg.Width, cfg.Height))
+	return strconv.Itoa(s) + "x" + strconv.Itoa(s)
 }
 
 func installedDesktopEntry(m desktopMetadata, executable, iconName, source string) string {
@@ -991,6 +1211,7 @@ func setupUser() error {
 		return err
 	}
 	refreshMIME(filepath.Join(p.dataHome, "mime"), p.appEntries)
+	_, _ = repairInstalledIcons(p)
 	fmt.Println("AppImage handler installed for", p.home)
 	fmt.Println("Double-clicking an AppImage will now integrate it into the application menu.")
 	return nil
@@ -1056,11 +1277,11 @@ Comment=Integrate an AppImage into the Linux desktop with Aurémi
 Comment[fr]=Intégrer une AppImage au bureau Linux avec Aurémi
 Exec=%s integrate %%f
 TryExec=%s
-Icon=%s
+Icon=auremi
 Terminal=false
 NoDisplay=true
 MimeType=application/vnd.appimage;application/x-iso9660-appimage;
-`, quoteExec(binary), cleanDesktopValue(binary), cleanDesktopValue(iconPath))
+`, quoteExec(binary), cleanDesktopValue(binary))
 	if err := writeAtomic(filepath.Join(apps, handlerID), []byte(desktop), 0o644); err != nil {
 		return err
 	}
@@ -1072,13 +1293,13 @@ Comment=Install, update, and uninstall integrated AppImages
 Comment[fr]=Installer, mettre à jour et désinstaller les AppImage intégrées
 Exec=%s manage
 TryExec=%s
-Icon=%s
+Icon=auremi
 Terminal=false
 StartupNotify=true
 Categories=Utility;
 Keywords=AppImage;Installer;Integration;Update;Uninstall;
 Keywords[fr]=AppImage;Installation;Intégration;Mise à jour;Désinstallation;
-`, quoteExec(binary), cleanDesktopValue(binary), cleanDesktopValue(iconPath))
+`, quoteExec(binary), cleanDesktopValue(binary))
 	if err := writeAtomic(filepath.Join(apps, launcherID), []byte(launcher), 0o644); err != nil {
 		return err
 	}
@@ -1654,9 +1875,142 @@ func isWithin(path, root string) bool {
 }
 
 func refreshDesktop(p paths) {
+	now := time.Now()
+	for _, dir := range []string{p.appEntries, p.iconsRoot, filepath.Join(p.dataHome, "icons", "hicolor")} {
+		_ = os.Chtimes(dir, now, now)
+	}
 	runOptional("update-desktop-database", p.appEntries)
 	runOptional("gtk-update-icon-cache", "-q", "-t", "-f", filepath.Join(p.dataHome, "icons", "hicolor"))
 	runOptional("kbuildsycoca6", "--noincremental")
+}
+
+func repairCommand() error {
+	p, err := userPaths()
+	if err != nil {
+		return err
+	}
+	repaired, err := repairInstalledIcons(p)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Repaired desktop icons for %d application(s).\n", repaired)
+	return nil
+}
+
+// repairInstalledIcons normalizes existing icons into standard hicolor directories
+// and switches desktop entries to themed icon names for COSMIC and other desktops.
+func repairInstalledIcons(p paths) (int, error) {
+	apps, err := managedApps(p)
+	if err != nil {
+		return 0, err
+	}
+	repaired := 0
+	for _, app := range apps {
+		changed := false
+		var candidates []iconCandidate
+		seen := make(map[string]bool)
+		existing := append([]string{}, app.Icons...)
+		if app.Icon != "" {
+			existing = append(existing, app.Icon)
+		}
+		for _, path := range existing {
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			ext := supportedIconExtension(path)
+			if ext == "" {
+				continue
+			}
+			candidates = append(candidates, iconCandidate{
+				path:    path,
+				ext:     ext,
+				sizeDir: iconSizeDir(path),
+			})
+		}
+
+		if len(candidates) > 0 {
+			newIcons := installIcons(candidates, p.dataHome, app.ID)
+			if len(newIcons) > 0 {
+				kept := make(map[string]bool, len(newIcons))
+				for _, path := range newIcons {
+					kept[path] = true
+				}
+				for _, oldPath := range existing {
+					if !kept[oldPath] && isWithin(oldPath, p.iconsRoot) {
+						_ = os.Remove(oldPath)
+						changed = true
+					}
+				}
+				if !sameStringSlice(app.Icons, newIcons) || app.Icon != newIcons[0] {
+					app.Icons = newIcons
+					app.Icon = newIcons[0]
+					changed = true
+				}
+			}
+		}
+
+		if app.DesktopFile != "" {
+			if updateDesktopIconLine(app.DesktopFile, app.ID) {
+				changed = true
+			}
+		}
+		if p.desktopDir != "" && app.Name != "" {
+			shortcut := filepath.Join(p.desktopDir, safeDesktopFilename(app.Name)+".desktop")
+			if _, err := os.Stat(shortcut); err == nil {
+				if updateDesktopIconLine(shortcut, app.ID) {
+					changed = true
+				}
+			}
+		}
+		if changed {
+			encoded, _ := json.MarshalIndent(app, "", "  ")
+			_ = writeAtomic(filepath.Join(p.appsRoot, app.ID, "metadata.json"), append(encoded, '\n'), 0o644)
+			repaired++
+		}
+	}
+	if repaired > 0 {
+		refreshDesktop(p)
+	}
+	return repaired, nil
+}
+
+func updateDesktopIconLine(path, iconName string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	lines := strings.Split(string(data), "\n")
+	want := "Icon=" + cleanDesktopValue(iconName)
+	changed := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, "Icon=") {
+			if line != want {
+				lines[i] = want
+				changed = true
+			}
+			break
+		}
+	}
+	if !changed {
+		return false
+	}
+	return writeAtomic(path, []byte(strings.Join(lines, "\n")), 0o755) == nil
+}
+
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func refreshMIME(mimeDir, appDir string) {

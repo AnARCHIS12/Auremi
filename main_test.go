@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -250,5 +251,113 @@ func writeTestPNG(t *testing.T, path string, size int) {
 	}
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInstallIconsNormalizesOversizedPNGForCosmic(t *testing.T) {
+	root := t.TempDir()
+	dataHome := filepath.Join(root, "data")
+	srcIcon := filepath.Join(root, "app.png")
+	writeTestPNG(t, srcIcon, 1024)
+
+	installed := installIcons([]iconCandidate{{path: srcIcon, ext: ".png", sizeDir: iconSizeDir(srcIcon)}}, dataHome, "appimage-demo")
+	if len(installed) == 0 {
+		t.Fatal("expected installed icons")
+	}
+	for _, p := range installed {
+		if strings.Contains(p, "1024x1024") {
+			t.Fatalf("oversized 1024x1024 icon should not be installed in hicolor: %s", p)
+		}
+	}
+	for _, wantSize := range []string{"512x512", "256x256", "128x128", "64x64"} {
+		wantPath := filepath.Join(dataHome, "icons", "hicolor", wantSize, "apps", "appimage-demo.png")
+		if _, err := os.Stat(wantPath); err != nil {
+			t.Fatalf("missing normalized icon %s: %v", wantPath, err)
+		}
+	}
+}
+
+func TestIntegrateUsesThemedIconNameInDesktopEntry(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	source := filepath.Join(root, "Demo.AppImage")
+	writeTestAppImage(t, source, 1)
+
+	res, err := integrate(source, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desktopData, err := os.ReadFile(res.DesktopFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(desktopData), "Icon="+res.ID+"\n") {
+		t.Fatalf("desktop entry should reference themed icon name %q:\n%s", res.ID, string(desktopData))
+	}
+	if res.Icon == "" || !filepath.IsAbs(res.Icon) {
+		t.Fatalf("metadata should keep absolute icon file path, got %q", res.Icon)
+	}
+}
+
+func TestRepairInstalledIconsMigratesAbsoluteAndOversizedIcons(t *testing.T) {
+	root := t.TempDir()
+	dataHome := filepath.Join(root, "data")
+	configHome := filepath.Join(root, "config")
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	p, err := userPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "appimage-legacy"
+	appDir := filepath.Join(p.appsRoot, id)
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.appEntries, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyIcon := filepath.Join(p.iconsRoot, "hicolor", "1024x1024", "apps", id+".png")
+	writeTestPNG(t, legacyIcon, 1024)
+
+	desktopPath := filepath.Join(p.appEntries, "legacy.desktop")
+	if err := os.WriteFile(desktopPath, []byte("[Desktop Entry]\nName=Legacy\nIcon="+legacyIcon+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta := appMetadata{
+		ID:          id,
+		Name:        "Legacy",
+		Source:      "/tmp/Legacy.AppImage",
+		Installed:   filepath.Join(appDir, "Legacy.AppImage"),
+		Icon:        legacyIcon,
+		Icons:       []string{legacyIcon},
+		DesktopFile: desktopPath,
+	}
+	encoded, _ := json.MarshalIndent(meta, "", "  ")
+	if err := os.WriteFile(filepath.Join(appDir, "metadata.json"), encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	repaired, err := repairInstalledIcons(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired != 1 {
+		t.Fatalf("repaired = %d, want 1", repaired)
+	}
+	if _, err := os.Stat(legacyIcon); !os.IsNotExist(err) {
+		t.Fatalf("legacy 1024x1024 icon should have been removed: %v", err)
+	}
+	desktopData, err := os.ReadFile(desktopPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(desktopData), "Icon="+id+"\n") {
+		t.Fatalf("desktop entry not migrated to themed icon:\n%s", string(desktopData))
+	}
+	if _, err := os.Stat(filepath.Join(p.iconsRoot, "hicolor", "256x256", "apps", id+".png")); err != nil {
+		t.Fatalf("expected 256x256 icon after repair: %v", err)
 	}
 }

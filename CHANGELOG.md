@@ -6,6 +6,19 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-25
+
+### Added
+
+- Added full COSMIC desktop support for integrated application icons alongside KDE, GNOME, and other Freedesktop environments.
+- Added automatic normalization of oversized or non-square PNG icons into standard `hicolor` dimensions (`512x512`, `256x256`, `128x128`, `64x64`).
+- Added the `repair-icons` (alias `repair`) command and automatic migration during `setup --user` to upgrade previously integrated launchers and icons.
+
+### Fixed
+
+- Switched generated `.desktop` launchers and Aurémi's own desktop entries from absolute icon paths to standard themed icon names (`Icon=<id>` and `Icon=auremi`).
+- Updated desktop directory timestamps during refresh so COSMIC's launcher, app library, and dock detect icon updates immediately.
+
 ## [0.4.0] — 2026-11-01
 
 ### Added
@@ -102,7 +115,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Automated tagged releases through GitHub Actions.
 - SHA-256 checksums for release assets.
 
-[Unreleased]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/AnARCHIS12/appimage-integrator/compare/v0.3.2...v0.3.3
