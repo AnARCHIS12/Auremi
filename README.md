@@ -183,6 +183,7 @@ Aurémi follows Freedesktop standards and is designed for:
 
 - KDE Plasma
 - GNOME
+- COSMIC
 - Cinnamon
 - XFCE
 - MATE
