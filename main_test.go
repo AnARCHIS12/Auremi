@@ -361,3 +361,15 @@ func TestRepairInstalledIconsMigratesAbsoluteAndOversizedIcons(t *testing.T) {
 		t.Fatalf("expected 256x256 icon after repair: %v", err)
 	}
 }
+
+func TestEnsureHicolorIndexTheme(t *testing.T) {
+	hicolorDir := filepath.Join(t.TempDir(), "icons", "hicolor")
+	ensureHicolorIndexTheme(hicolorDir)
+	data, err := os.ReadFile(filepath.Join(hicolorDir, "index.theme"))
+	if err != nil {
+		t.Fatalf("expected index.theme to be created: %v", err)
+	}
+	if !strings.Contains(string(data), "[Icon Theme]") {
+		t.Fatalf("unexpected index.theme contents:\n%s", string(data))
+	}
+}

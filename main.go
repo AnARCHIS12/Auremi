@@ -899,7 +899,6 @@ func installIcons(candidates []iconCandidate, dataHome, id string) []string {
 	installedSlots := make(map[string]bool)
 	var largestPNG image.Image
 	largestDim := 0
-	hasSVG := false
 
 	for _, candidate := range candidates {
 		if candidate.ext == ".svg" {
@@ -911,7 +910,6 @@ func installIcons(candidates []iconCandidate, dataHome, id string) []string {
 			if err := copyFileAtomic(candidate.path, destination, 0o644); err == nil {
 				installed = append(installed, destination)
 				installedSlots["scalable.svg"] = true
-				hasSVG = true
 			}
 			continue
 		}
@@ -970,7 +968,7 @@ func installIcons(candidates []iconCandidate, dataHome, id string) []string {
 		}
 	}
 
-	if largestPNG != nil && !hasSVG {
+	if largestPNG != nil {
 		for _, sz := range cosmicRecommendedPNGSizes {
 			if largestDim < sz {
 				continue
@@ -1875,14 +1873,73 @@ func isWithin(path, root string) bool {
 }
 
 func refreshDesktop(p paths) {
+	hicolorDir := filepath.Join(p.dataHome, "icons", "hicolor")
+	ensureHicolorIndexTheme(hicolorDir)
 	now := time.Now()
-	for _, dir := range []string{p.appEntries, p.iconsRoot, filepath.Join(p.dataHome, "icons", "hicolor")} {
+	for _, dir := range []string{p.appEntries, p.iconsRoot, hicolorDir} {
 		_ = os.Chtimes(dir, now, now)
 	}
 	runOptional("update-desktop-database", p.appEntries)
-	runOptional("gtk-update-icon-cache", "-q", "-t", "-f", filepath.Join(p.dataHome, "icons", "hicolor"))
+	runOptional("gtk-update-icon-cache", "-q", "-t", "-f", hicolorDir)
 	runOptional("kbuildsycoca6", "--noincremental")
 	refreshCosmicPanel()
+}
+
+func ensureHicolorIndexTheme(hicolorDir string) {
+	target := filepath.Join(hicolorDir, "index.theme")
+	if _, err := os.Stat(target); err == nil {
+		return
+	}
+	if err := os.MkdirAll(hicolorDir, 0o755); err != nil {
+		return
+	}
+	if data, err := os.ReadFile("/usr/share/icons/hicolor/index.theme"); err == nil && len(data) > 0 {
+		_ = writeAtomic(target, data, 0o644)
+		return
+	}
+	minimal := `[Icon Theme]
+Name=Hicolor
+Comment=Fallback icon theme
+Directories=32x32/apps,48x48/apps,64x64/apps,128x128/apps,256x256/apps,512x512/apps,scalable/apps
+
+[32x32/apps]
+Size=32
+Context=Applications
+Type=Threshold
+
+[48x48/apps]
+Size=48
+Context=Applications
+Type=Threshold
+
+[64x64/apps]
+Size=64
+Context=Applications
+Type=Threshold
+
+[128x128/apps]
+Size=128
+Context=Applications
+Type=Threshold
+
+[256x256/apps]
+Size=256
+Context=Applications
+Type=Threshold
+
+[512x512/apps]
+Size=512
+Context=Applications
+Type=Threshold
+
+[scalable/apps]
+Size=48
+MinSize=1
+MaxSize=256
+Context=Applications
+Type=Scalable
+`
+	_ = writeAtomic(target, []byte(minimal), 0o644)
 }
 
 func isCosmicDesktop() bool {
