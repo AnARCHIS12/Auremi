@@ -6,6 +6,12 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-11-27
+
+### Fixed
+- Ensure `~/.local/share/icons/hicolor/index.theme` exists before refreshing `gtk-update-icon-cache` and `cosmic-panel`, preventing missing application icons on COSMIC and Wayland launchers.
+- Always generate missing `hicolor` PNG sizes (`48x48`, `32x32`, etc.) from the largest extracted PNG even when an SVG icon is also present.
+
 ## [0.4.2] — 2026-11-25
 
 ### Added

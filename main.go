@@ -33,7 +33,7 @@ import (
 const (
 	programName = "appimage-integrator"
 	productName = "Aurémi"
-	version     = "0.4.2"
+	version     = "0.4.3"
 	handlerID   = "appimage-integrator-handler.desktop"
 	launcherID  = "io.github.anarchis12.auremi.desktop"
 	metainfoID  = "io.github.anarchis12.auremi.metainfo.xml"

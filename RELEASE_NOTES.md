@@ -1,3 +1,12 @@
+# Aurémi 0.4.3
+
+## What's New
+
+- **COSMIC / hicolor icon fix**: automatically creates `~/.local/share/icons/hicolor/index.theme` when missing so themed AppImage icons resolve reliably in COSMIC and other desktop launchers.
+- **Complete PNG sizes alongside SVG**: generates missing `48x48` and `32x32` PNG icons even when an SVG icon is bundled in the AppImage.
+
+---
+
 # Aurémi 0.4.2
 
 This release ensures newly integrated AppImages and their icons appear immediately in COSMIC's dock and taskbar, and fixes the GitHub Pages repository URLs.
